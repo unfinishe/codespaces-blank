@@ -3,6 +3,7 @@
 ## Core Function
 Android Pic Sort organizes photos from a selected source folder into a selected target folder by date.
 It supports `Copy` or `Move`, optional `Dry run`, and creates a `YYYY/MM MonthName` folder structure.
+It also provides a dedicated repair mode for broken file dates, using metadata and common filename timestamp patterns when available.
 Optionally, it can also sort non-image files (for example videos), using file date mode automatically for those files.
 The app also attempts to preserve the source file date on the target file and reports clearly when Android storage limitations prevent confirmation. True filesystem creation time cannot be guaranteed uniformly under Android SAF.
 
@@ -77,16 +78,22 @@ For setup and Play upload steps, see:
 ## Product Scope (MVP)
 - Select a source folder on device storage.
 - Select a target folder on device storage.
-- Choose operation mode: `Copy` or `Move`.
+- Choose task mode: sort files or repair file dates.
+- In sorting mode, choose operation mode: `Copy` or `Move`.
 - Optional `Dry run` mode for safe preview without file changes.
 - Scan and process all supported image formats recursively.
 - Optional toggle to include non-image files; non-images use file date mode automatically.
 - Select date source mode:
   - Metadata date (fallback: file date)
   - File date only (faster)
+- In repair mode, derive file dates from:
+  - metadata first, then filename
+  - filename first, then metadata
+  - filename only
 - Organize files into `YYYY/MM MonthName` (default schema).
 - Resolve filename conflicts by policy: `Rename` (for example `name_1.ext`) or `Overwrite`.
-- Show a final report (processed, copied/moved, failed, skipped, planned, renamed, categorized error buckets, and timestamp preservation confirmation).
+- Inform the user during and after each run with qualitative and quantitative feedback.
+- Show a final report (processed, copied/moved or repaired, failed, skipped, planned, renamed, categorized error buckets, timestamp preservation confirmation, and duration).
 
 ## Out of Scope (MVP)
 - Undo functionality.
@@ -105,7 +112,7 @@ If a format cannot expose metadata consistently on a specific device, processing
 - Material 3 UI with Android design guideline compliance.
 - Clean separation:
   - Domain rules (date extraction strategy, folder schema, conflict resolution)
-  - Android adapters (SAF/MediaStore access, EXIF reader integration, best-effort timestamp preservation)
+  - Android adapters (SAF/MediaStore access, EXIF reader integration, filename timestamp extraction, best-effort timestamp preservation)
   - UI + ViewModel orchestration
 - Folder schema is extensible by design; default implementation remains `YYYY/MM MonthName`.
 

@@ -13,6 +13,7 @@ data class SortReport(
     val deleteFailed: Int = 0,
     val timestampPreserved: Int = 0,
     val timestampNotPreserved: Int = 0,
+    val taskMode: TaskMode = TaskMode.SORT,
     val mode: OperationMode = OperationMode.COPY,
     val dryRun: Boolean = false,
     val durationMillis: Long = 0,

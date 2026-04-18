@@ -58,6 +58,8 @@ import de.thomba.andropicsort.R
 import de.thomba.andropicsort.core.ConflictPolicy
 import de.thomba.andropicsort.core.DateSourceMode
 import de.thomba.andropicsort.core.OperationMode
+import de.thomba.andropicsort.core.RepairDateSourceMode
+import de.thomba.andropicsort.core.TaskMode
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -242,6 +244,7 @@ private fun FoldersCard(
     onPickTarget: () -> Unit,
     compact: Boolean = false,
 ) {
+    val isRepairMode = state.taskMode == TaskMode.REPAIR_TIMESTAMPS
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
@@ -253,7 +256,10 @@ private fun FoldersCard(
             title = stringResource(R.string.folders_section),
             accentIconRes = R.drawable.ic_folders_pair,
             compact = compact,
-            description = stringResource(R.string.folders_section_description),
+            description = stringResource(
+                if (isRepairMode) R.string.folders_section_repair_description
+                else R.string.folders_section_description
+            ),
         )
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -262,33 +268,38 @@ private fun FoldersCard(
                     contentDescription = stringResource(R.string.source_icon_desc),
                     tint = MaterialTheme.colorScheme.primary,
                 )
-                Text(text = stringResource(R.string.source_folder), style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    text = stringResource(if (isRepairMode) R.string.repair_folder else R.string.source_folder),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
             }
             FolderSection(
                 value = state.sourceUri?.toDisplayText(),
-                buttonLabel = stringResource(R.string.choose_source_folder),
+                buttonLabel = stringResource(if (isRepairMode) R.string.choose_repair_folder else R.string.choose_source_folder),
                 iconRes = R.drawable.ic_source_directory,
                 onPick = onPickSource,
                 enabled = !state.isRunning,
             )
 
-            Spacer(modifier = Modifier.height(2.dp))
+            if (!isRepairMode) {
+                Spacer(modifier = Modifier.height(2.dp))
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_target_directory),
-                    contentDescription = stringResource(R.string.target_icon_desc),
-                    tint = MaterialTheme.colorScheme.primary,
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_target_directory),
+                        contentDescription = stringResource(R.string.target_icon_desc),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Text(text = stringResource(R.string.target_folder), style = MaterialTheme.typography.bodyMedium)
+                }
+                FolderSection(
+                    value = state.targetUri?.toDisplayText(),
+                    buttonLabel = stringResource(R.string.choose_target_folder),
+                    iconRes = R.drawable.ic_target_directory,
+                    onPick = onPickTarget,
+                    enabled = !state.isRunning,
                 )
-                Text(text = stringResource(R.string.target_folder), style = MaterialTheme.typography.bodyMedium)
             }
-            FolderSection(
-                value = state.targetUri?.toDisplayText(),
-                buttonLabel = stringResource(R.string.choose_target_folder),
-                iconRes = R.drawable.ic_target_directory,
-                onPick = onPickTarget,
-                enabled = !state.isRunning,
-            )
         }
     }
 }
@@ -316,63 +327,123 @@ private fun RunOptionsCard(
         )
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(optionsSpacing)) {
             OptionSelector(
-                title = stringResource(R.string.operation_mode),
+                title = stringResource(R.string.task_mode),
                 enabled = !state.isRunning,
                 options = listOf(
                     SelectorOption(
-                        label = stringResource(R.string.copy_mode),
-                        selected = state.mode == OperationMode.COPY,
-                        onSelect = { viewModel.onModeChanged(OperationMode.COPY) },
+                        label = stringResource(R.string.task_sort_files),
+                        selected = state.taskMode == TaskMode.SORT,
+                        onSelect = { viewModel.onTaskModeChanged(TaskMode.SORT) },
                         iconRes = R.drawable.ic_copy_action,
                         iconDescription = stringResource(R.string.copy_icon_desc),
                     ),
                     SelectorOption(
-                        label = stringResource(R.string.move_mode),
-                        selected = state.mode == OperationMode.MOVE,
-                        onSelect = { viewModel.onModeChanged(OperationMode.MOVE) },
-                        iconRes = R.drawable.ic_move_action,
-                        iconDescription = stringResource(R.string.move_icon_desc),
-                    ),
-                ),
-            )
-
-            OptionSelector(
-                title = stringResource(R.string.conflict_policy),
-                enabled = !state.isRunning,
-                options = listOf(
-                    SelectorOption(
-                        label = stringResource(R.string.conflict_rename),
-                        selected = state.conflictPolicy == ConflictPolicy.RENAME,
-                        onSelect = { viewModel.onConflictPolicyChanged(ConflictPolicy.RENAME) },
-                    ),
-                    SelectorOption(
-                        label = stringResource(R.string.conflict_overwrite),
-                        selected = state.conflictPolicy == ConflictPolicy.OVERWRITE,
-                        onSelect = { viewModel.onConflictPolicyChanged(ConflictPolicy.OVERWRITE) },
-                    ),
-                ),
-            )
-
-            OptionSelector(
-                title = stringResource(R.string.date_source_mode),
-                enabled = !state.isRunning,
-                options = listOf(
-                    SelectorOption(
-                        label = stringResource(R.string.date_source_metadata_then_file),
-                        selected = state.dateSourceMode == DateSourceMode.METADATA_THEN_FILE,
-                        onSelect = { viewModel.onDateSourceModeChanged(DateSourceMode.METADATA_THEN_FILE) },
-                        iconRes = R.drawable.ic_date_metadata,
-                        iconDescription = stringResource(R.string.date_source_metadata_icon_desc),
-                    ),
-                    SelectorOption(
-                        label = stringResource(R.string.date_source_file_only),
-                        selected = state.dateSourceMode == DateSourceMode.FILE_ONLY,
-                        onSelect = { viewModel.onDateSourceModeChanged(DateSourceMode.FILE_ONLY) },
+                        label = stringResource(R.string.task_repair_timestamps),
+                        selected = state.taskMode == TaskMode.REPAIR_TIMESTAMPS,
+                        onSelect = { viewModel.onTaskModeChanged(TaskMode.REPAIR_TIMESTAMPS) },
                         iconRes = R.drawable.ic_date_file,
                         iconDescription = stringResource(R.string.date_source_file_icon_desc),
                     ),
                 ),
             )
+
+            if (state.taskMode == TaskMode.SORT) {
+                OptionSelector(
+                    title = stringResource(R.string.operation_mode),
+                    enabled = !state.isRunning,
+                    options = listOf(
+                        SelectorOption(
+                            label = stringResource(R.string.copy_mode),
+                            selected = state.mode == OperationMode.COPY,
+                            onSelect = { viewModel.onModeChanged(OperationMode.COPY) },
+                            iconRes = R.drawable.ic_copy_action,
+                            iconDescription = stringResource(R.string.copy_icon_desc),
+                        ),
+                        SelectorOption(
+                            label = stringResource(R.string.move_mode),
+                            selected = state.mode == OperationMode.MOVE,
+                            onSelect = { viewModel.onModeChanged(OperationMode.MOVE) },
+                            iconRes = R.drawable.ic_move_action,
+                            iconDescription = stringResource(R.string.move_icon_desc),
+                        ),
+                    ),
+                )
+
+                OptionSelector(
+                    title = stringResource(R.string.conflict_policy),
+                    enabled = !state.isRunning,
+                    options = listOf(
+                        SelectorOption(
+                            label = stringResource(R.string.conflict_rename),
+                            selected = state.conflictPolicy == ConflictPolicy.RENAME,
+                            onSelect = { viewModel.onConflictPolicyChanged(ConflictPolicy.RENAME) },
+                        ),
+                        SelectorOption(
+                            label = stringResource(R.string.conflict_overwrite),
+                            selected = state.conflictPolicy == ConflictPolicy.OVERWRITE,
+                            onSelect = { viewModel.onConflictPolicyChanged(ConflictPolicy.OVERWRITE) },
+                        ),
+                    ),
+                )
+
+                OptionSelector(
+                    title = stringResource(R.string.date_source_mode),
+                    enabled = !state.isRunning,
+                    options = listOf(
+                        SelectorOption(
+                            label = stringResource(R.string.date_source_metadata_then_file),
+                            selected = state.dateSourceMode == DateSourceMode.METADATA_THEN_FILE,
+                            onSelect = { viewModel.onDateSourceModeChanged(DateSourceMode.METADATA_THEN_FILE) },
+                            iconRes = R.drawable.ic_date_metadata,
+                            iconDescription = stringResource(R.string.date_source_metadata_icon_desc),
+                        ),
+                        SelectorOption(
+                            label = stringResource(R.string.date_source_file_only),
+                            selected = state.dateSourceMode == DateSourceMode.FILE_ONLY,
+                            onSelect = { viewModel.onDateSourceModeChanged(DateSourceMode.FILE_ONLY) },
+                            iconRes = R.drawable.ic_date_file,
+                            iconDescription = stringResource(R.string.date_source_file_icon_desc),
+                        ),
+                    ),
+                )
+            } else {
+                Text(
+                    text = stringResource(R.string.repair_mode_hint),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OptionSelector(
+                    title = stringResource(R.string.repair_date_source_mode),
+                    enabled = !state.isRunning,
+                    options = listOf(
+                        SelectorOption(
+                            label = stringResource(R.string.repair_date_source_metadata_then_filename),
+                            selected = state.repairDateSourceMode == RepairDateSourceMode.METADATA_THEN_FILENAME,
+                            onSelect = { viewModel.onRepairDateSourceModeChanged(RepairDateSourceMode.METADATA_THEN_FILENAME) },
+                            iconRes = R.drawable.ic_date_metadata,
+                            iconDescription = stringResource(R.string.date_source_metadata_icon_desc),
+                        ),
+                        SelectorOption(
+                            label = stringResource(R.string.repair_date_source_filename_then_metadata),
+                            selected = state.repairDateSourceMode == RepairDateSourceMode.FILENAME_THEN_METADATA,
+                            onSelect = { viewModel.onRepairDateSourceModeChanged(RepairDateSourceMode.FILENAME_THEN_METADATA) },
+                            iconRes = R.drawable.ic_date_file,
+                            iconDescription = stringResource(R.string.date_source_file_icon_desc),
+                        ),
+                        SelectorOption(
+                            label = stringResource(R.string.repair_date_source_filename_only),
+                            selected = state.repairDateSourceMode == RepairDateSourceMode.FILENAME_ONLY,
+                            onSelect = { viewModel.onRepairDateSourceModeChanged(RepairDateSourceMode.FILENAME_ONLY) },
+                            iconRes = R.drawable.ic_date_file,
+                            iconDescription = stringResource(R.string.date_source_file_icon_desc),
+                        ),
+                    ),
+                )
+                Text(
+                    text = stringResource(R.string.repair_filename_patterns_hint),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
 
             OptionSelector(
                 title = stringResource(R.string.sort_scope),
@@ -433,7 +504,10 @@ private fun RunOptionsCard(
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
-                        text = stringResource(R.string.start_section_description),
+                        text = stringResource(
+                            if (state.taskMode == TaskMode.SORT) R.string.start_section_description
+                            else R.string.start_repair_description
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -446,7 +520,7 @@ private fun RunOptionsCard(
                             .height(if (compact) 46.dp else 50.dp),
                         shape = RoundedCornerShape(14.dp),
                     ) {
-                        Text(stringResource(R.string.start_sort))
+                        Text(stringResource(if (state.taskMode == TaskMode.SORT) R.string.start_sort else R.string.start_repair))
                     }
                 }
             }
@@ -465,11 +539,23 @@ private fun StatusArea(state: MainUiState, compact: Boolean) {
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(stringResource(R.string.sorting_in_progress), style = MaterialTheme.typography.titleMedium)
                     Text(
-                        text = stringResource(R.string.current_mode_line, operationModeLabel(state.mode)),
+                        stringResource(
+                            if (state.taskMode == TaskMode.SORT) R.string.sorting_in_progress
+                            else R.string.repair_in_progress
+                        ),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        text = stringResource(R.string.current_task_line, taskModeLabel(state.taskMode)),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    if (state.taskMode == TaskMode.SORT) {
+                        Text(
+                            text = stringResource(R.string.current_mode_line, operationModeLabel(state.mode)),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.5.dp)
                     }
@@ -509,9 +595,15 @@ private fun StatusArea(state: MainUiState, compact: Boolean) {
                 )
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = stringResource(R.string.report_mode_line, operationModeLabel(report.mode)),
+                        text = stringResource(R.string.report_task_line, taskModeLabel(report.taskMode)),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    if (report.taskMode == TaskMode.SORT) {
+                        Text(
+                            text = stringResource(R.string.report_mode_line, operationModeLabel(report.mode)),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     Text(
                         text = stringResource(
                             R.string.report_timestamp_line,
@@ -526,28 +618,46 @@ private fun StatusArea(state: MainUiState, compact: Boolean) {
                             color = MaterialTheme.colorScheme.error,
                         )
                     }
-                    Text(
-                        text = stringResource(
-                            R.string.report_line,
-                            report.processed,
-                            report.copied,
-                            report.moved,
-                            report.failed,
-                            report.skipped,
-                            report.planned,
-                            report.renamed,
+                    if (report.taskMode == TaskMode.SORT) {
+                        Text(
+                            text = stringResource(
+                                R.string.report_line,
+                                report.processed,
+                                report.copied,
+                                report.moved,
+                                report.failed,
+                                report.skipped,
+                                report.planned,
+                                report.renamed,
+                            )
                         )
-                    )
-                    Text(
-                        text = stringResource(
-                            R.string.report_errors_line,
-                            report.createFailed,
-                            report.copyFailed,
-                            report.deleteFailed,
+                        Text(
+                            text = stringResource(
+                                R.string.report_errors_line,
+                                report.createFailed,
+                                report.copyFailed,
+                                report.deleteFailed,
+                            )
                         )
-                    )
+                    } else {
+                        Text(
+                            text = stringResource(
+                                R.string.repair_report_line,
+                                report.processed,
+                                report.timestampPreserved,
+                                report.failed,
+                                report.skipped,
+                                report.planned,
+                            )
+                        )
+                    }
                     if (report.dryRun) {
-                        Text(text = stringResource(R.string.dry_run_report_note))
+                        Text(
+                            text = stringResource(
+                                if (report.taskMode == TaskMode.SORT) R.string.dry_run_report_note
+                                else R.string.dry_run_repair_note
+                            )
+                        )
                     }
                     if (report.durationMillis > 0) {
                         Text(
@@ -562,6 +672,7 @@ private fun StatusArea(state: MainUiState, compact: Boolean) {
         state.errorMessage?.let { key ->
             val message = when (key) {
                 "missing_folders" -> stringResource(R.string.missing_folder_selection)
+                "missing_source_folder" -> stringResource(R.string.missing_source_folder)
                 "source_equals_target" -> stringResource(R.string.source_equals_target)
                 else -> stringResource(R.string.error_prefix, key)
             }
@@ -708,6 +819,12 @@ private fun FolderSection(
             Text(buttonLabel)
         }
     }
+}
+
+@Composable
+private fun taskModeLabel(mode: TaskMode): String = when (mode) {
+    TaskMode.SORT -> stringResource(R.string.task_sort_files)
+    TaskMode.REPAIR_TIMESTAMPS -> stringResource(R.string.task_repair_timestamps)
 }
 
 @Composable

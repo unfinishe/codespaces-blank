@@ -12,6 +12,8 @@ import de.thomba.andropicsort.core.AppLocalePolicy
 import de.thomba.andropicsort.core.ConflictPolicy
 import de.thomba.andropicsort.core.DateSourceMode
 import de.thomba.andropicsort.core.OperationMode
+import de.thomba.andropicsort.core.RepairDateSourceMode
+import de.thomba.andropicsort.core.TaskMode
 import de.thomba.andropicsort.settings.SettingsStorage
 import de.thomba.andropicsort.settings.StoredUiSettings
 import de.thomba.andropicsort.settings.UiSettingsStorage
@@ -63,6 +65,10 @@ class MainViewModel(
         updateStateAndPersist { it.copy(targetUri = uri, report = null, errorMessage = null) }
     }
 
+    fun onTaskModeChanged(taskMode: TaskMode) {
+        updateStateAndPersist { it.copy(taskMode = taskMode, report = null, errorMessage = null) }
+    }
+
     fun onModeChanged(mode: OperationMode) {
         updateStateAndPersist { it.copy(mode = mode) }
     }
@@ -79,6 +85,10 @@ class MainViewModel(
         updateStateAndPersist { it.copy(dateSourceMode = mode) }
     }
 
+    fun onRepairDateSourceModeChanged(mode: RepairDateSourceMode) {
+        updateStateAndPersist { it.copy(repairDateSourceMode = mode) }
+    }
+
     fun onSortNonImagesChanged(enabled: Boolean) {
         updateStateAndPersist { it.copy(sortNonImages = enabled) }
     }
@@ -90,13 +100,18 @@ class MainViewModel(
         val source = state.sourceUri
         val target = state.targetUri
 
-        if (source == null || target == null) {
+        if (source == null) {
+            _uiState.update { it.copy(errorMessage = "missing_source_folder") }
+            return
+        }
+
+        if (state.taskMode == TaskMode.SORT && target == null) {
             _uiState.update { it.copy(errorMessage = "missing_folders") }
             return
         }
 
         // P1 — Source ≠ Target validation at UI level
-        if (source == target) {
+        if (state.taskMode == TaskMode.SORT && source == target) {
             _uiState.update { it.copy(errorMessage = "source_equals_target") }
             return
         }
@@ -117,10 +132,12 @@ class MainViewModel(
                 val report = sortUseCase.run(
                     SortConfig(
                         sourceTreeUri = source,
-                        targetTreeUri = target,
+                        targetTreeUri = if (state.taskMode == TaskMode.SORT) target else null,
+                        taskMode = state.taskMode,
                         mode = state.mode,
                         conflictPolicy = state.conflictPolicy,
                         dateSourceMode = state.dateSourceMode,
+                        repairDateSourceMode = state.repairDateSourceMode,
                         sortNonImages = state.sortNonImages,
                         locale = locale,
                         dryRun = state.dryRun,
@@ -153,9 +170,11 @@ class MainViewModel(
                 it.copy(
                     sourceUri = source,
                     targetUri = target,
+                    taskMode = stored.taskMode,
                     mode = stored.mode,
                     conflictPolicy = stored.conflictPolicy,
                     dateSourceMode = stored.dateSourceMode,
+                    repairDateSourceMode = stored.repairDateSourceMode,
                     sortNonImages = stored.sortNonImages,
                     dryRun = stored.dryRun,
                 )
@@ -185,9 +204,11 @@ class MainViewModel(
         return StoredUiSettings(
             sourceUri = sourceUri,
             targetUri = targetUri,
+            taskMode = taskMode,
             mode = mode,
             conflictPolicy = conflictPolicy,
             dateSourceMode = dateSourceMode,
+            repairDateSourceMode = repairDateSourceMode,
             sortNonImages = sortNonImages,
             dryRun = dryRun,
         )

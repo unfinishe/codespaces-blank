@@ -6,7 +6,9 @@ import androidx.test.core.app.ApplicationProvider
 import de.thomba.andropicsort.core.ConflictPolicy
 import de.thomba.andropicsort.core.DateSourceMode
 import de.thomba.andropicsort.core.OperationMode
+import de.thomba.andropicsort.core.RepairDateSourceMode
 import de.thomba.andropicsort.core.SortReport
+import de.thomba.andropicsort.core.TaskMode
 import de.thomba.andropicsort.settings.SettingsStorage
 import de.thomba.andropicsort.settings.StoredUiSettings
 import de.thomba.andropicsort.sort.SortConfig
@@ -195,6 +197,30 @@ class MainViewModelTest {
         assertEquals(OperationMode.MOVE, fakeSortUseCase.lastConfig!!.mode)
     }
 
+    @Test
+    fun `repair mode with only source set starts and passes repair task`() = runTest {
+        viewModel.onTaskModeChanged(TaskMode.REPAIR_TIMESTAMPS)
+        viewModel.onSourceSelected(Uri.parse("content://test/repair"))
+
+        viewModel.startSort()
+        advanceUntilIdle()
+
+        assertEquals(TaskMode.REPAIR_TIMESTAMPS, fakeSortUseCase.lastConfig!!.taskMode)
+        assertNull("Repair mode must not require a target", viewModel.uiState.value.errorMessage)
+    }
+
+    @Test
+    fun `repair mode passes filename first repair source setting`() = runTest {
+        viewModel.onTaskModeChanged(TaskMode.REPAIR_TIMESTAMPS)
+        viewModel.onRepairDateSourceModeChanged(RepairDateSourceMode.FILENAME_THEN_METADATA)
+        viewModel.onSourceSelected(Uri.parse("content://test/repair"))
+
+        viewModel.startSort()
+        advanceUntilIdle()
+
+        assertEquals(RepairDateSourceMode.FILENAME_THEN_METADATA, fakeSortUseCase.lastConfig!!.repairDateSourceMode)
+    }
+
     // ── Conflict policies ───────────────────────────────────────────────
 
     @Test
@@ -309,7 +335,7 @@ class FakeSortUseCase : SortUseCase {
         lastConfig = config
         callCount++
         blocker?.await()
-        return reportToReturn.copy(dryRun = config.dryRun)
+        return reportToReturn.copy(dryRun = config.dryRun, taskMode = config.taskMode, mode = config.mode)
     }
 }
 

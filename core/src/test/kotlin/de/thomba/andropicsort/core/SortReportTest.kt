@@ -22,6 +22,7 @@ class SortReportTest {
         assertEquals(0, report.deleteFailed)
         assertEquals(0, report.timestampPreserved)
         assertEquals(0, report.timestampNotPreserved)
+        assertEquals(TaskMode.SORT, report.taskMode)
         assertEquals(OperationMode.COPY, report.mode)
         assertFalse(report.dryRun)
         assertEquals(0L, report.durationMillis)
@@ -58,6 +59,7 @@ class SortReportTest {
             deleteFailed = 0,
             timestampPreserved = 6,
             timestampNotPreserved = 1,
+            taskMode = TaskMode.REPAIR_TIMESTAMPS,
             mode = OperationMode.MOVE,
             dryRun = false,
             durationMillis = 1500L,
@@ -73,6 +75,7 @@ class SortReportTest {
         assertEquals(0, report.deleteFailed)
         assertEquals(6, report.timestampPreserved)
         assertEquals(1, report.timestampNotPreserved)
+        assertEquals(TaskMode.REPAIR_TIMESTAMPS, report.taskMode)
         assertEquals(OperationMode.MOVE, report.mode)
         assertEquals(1500L, report.durationMillis)
     }

@@ -16,6 +16,9 @@
 - **Scenario:** First-time user starts app without prior setup.
 - **Expected:** User can complete one sorting run with source/target selection and mode choice in a short guided flow.
 
+- **Scenario:** User starts a sort or repair operation and wants to understand what the app is doing.
+- **Expected:** The app shows the current task and progress during execution and provides a final report with processed count, success/failure counts, skipped items, and duration.
+
 ### Performance
 - **Scenario:** Sorting a large camera folder.
 - **Expected:** Continuous progress updates and no app freeze; measured with macrobenchmarks.

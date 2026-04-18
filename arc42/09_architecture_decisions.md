@@ -55,3 +55,13 @@
 - Decision: Prefer provider-native copy/move operations when available and then verify or request the target document timestamp to match the source timestamp. Report clearly when preservation cannot be confirmed.
 - Rationale: User value is highest when the target file still shows the original date. Under Android SAF, true filesystem creation time is provider-controlled and cannot be guaranteed uniformly, so the implementation must be explicit about this limitation.
 
+## ADR-012 Separate Repair Task for Broken File Dates
+- Status: Accepted
+- Decision: Distinguish normal sorting from timestamp repair via an explicit task selector in the UI. The repair task operates in place and may derive timestamps from metadata or common filename patterns.
+- Rationale: Repairing damaged file dates is a different user intent than organizing files. The separation keeps the main flow clear, reduces accidental misuse, and follows the one task - one tool principle.
+
+## ADR-013 Transparent Run Feedback in the UI
+- Status: Accepted
+- Decision: Every operation mode must communicate both qualitative and quantitative feedback to the user during and after execution. This includes current task context, visible progress, processed counts, success/failure counters, skipped items, and run duration.
+- Rationale: File operations are safety-sensitive. Users need confidence, traceability, and understandable outcomes, especially for repair and move workflows.
+

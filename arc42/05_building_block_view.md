@@ -3,7 +3,7 @@
 ## Level 1
 ### Android App
 - Presents setup/progress/report screens.
-- Orchestrates sorting execution.
+- Orchestrates sorting execution and file-date repair runs.
 
 ### Gradle Modules
 - `:app` contains Android-specific code (Compose UI, Activity lifecycle, SAF/document handling, Android adapters).
@@ -13,8 +13,10 @@
 ## Level 2
 ### UI Layer
 - Compose screens for:
+  - task selection (`Sort files` or `Repair file dates`)
   - source/target selection
-  - mode selection (`Copy` or `Move`)
+  - mode selection (`Copy` or `Move`) for sorting
+  - repair date source selection (metadata and/or filename)
   - run progress
   - final report
 
@@ -25,6 +27,7 @@
 ### Domain Layer
 - `SortUseCase` for run orchestration.
 - `DateResolver` strategy (metadata first, timestamp fallback).
+- `FileNameTimestampExtractor` for repair-mode fallback across common filename patterns.
 - `FolderSchema` strategy (default: `YYYY/MM MonthName`, extensible later).
 - `ConflictResolver` for suffix naming.
 

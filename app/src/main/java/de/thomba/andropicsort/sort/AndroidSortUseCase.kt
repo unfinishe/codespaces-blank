@@ -10,10 +10,13 @@ import androidx.exifinterface.media.ExifInterface
 import de.thomba.andropicsort.core.ConflictPolicy
 import de.thomba.andropicsort.core.ConflictResolver
 import de.thomba.andropicsort.core.DateSourceMode
+import de.thomba.andropicsort.core.FileNameTimestampExtractor
 import de.thomba.andropicsort.core.InputFilePolicy
 import de.thomba.andropicsort.core.NativeTransferPolicy
 import de.thomba.andropicsort.core.OperationMode
+import de.thomba.andropicsort.core.RepairDateSourceMode
 import de.thomba.andropicsort.core.SortReport
+import de.thomba.andropicsort.core.TaskMode
 import de.thomba.andropicsort.core.TimestampPreservationPolicy
 import de.thomba.andropicsort.core.YearMonthFolderSchema
 import kotlinx.coroutines.ensureActive
@@ -67,7 +70,12 @@ class AndroidSortUseCase(
         var timestampPreserved = 0
         var timestampNotPreserved = 0
 
-        fun toReport(dryRun: Boolean, durationMillis: Long, mode: OperationMode) = SortReport(
+        fun toReport(
+            dryRun: Boolean,
+            durationMillis: Long,
+            mode: OperationMode,
+            taskMode: TaskMode,
+        ) = SortReport(
             processed = processed,
             copied = copied,
             moved = moved,
@@ -80,6 +88,7 @@ class AndroidSortUseCase(
             deleteFailed = deleteFailed,
             timestampPreserved = timestampPreserved,
             timestampNotPreserved = timestampNotPreserved,
+            taskMode = taskMode,
             mode = mode,
             dryRun = dryRun,
             durationMillis = durationMillis,
@@ -93,21 +102,38 @@ class AndroidSortUseCase(
     override suspend fun run(config: SortConfig, onProgress: (SortProgress) -> Unit): SortReport {
         val startTime = System.nanoTime()
 
-        // P1 — Source ≠ Target validation
-        if (config.sourceTreeUri == config.targetTreeUri) {
-            return errorReport(config.dryRun, config.mode)
-        }
-
         val sourceRoot = DocumentFile.fromTreeUri(context, config.sourceTreeUri)
-        val targetRoot = DocumentFile.fromTreeUri(context, config.targetTreeUri)
-
-        if (sourceRoot == null || !sourceRoot.isDirectory || targetRoot == null || !targetRoot.isDirectory) {
+        if (sourceRoot == null || !sourceRoot.isDirectory) {
             return SortReport(
                 processed = 0,
                 copied = 0,
                 moved = 0,
                 failed = 1,
                 skipped = 0,
+                taskMode = config.taskMode,
+                mode = config.mode,
+                dryRun = config.dryRun,
+            )
+        }
+
+        if (config.taskMode == TaskMode.REPAIR_TIMESTAMPS) {
+            return runRepairMode(sourceRoot, config, onProgress, startTime)
+        }
+
+        // P1 — Source ≠ Target validation
+        if (config.sourceTreeUri == config.targetTreeUri) {
+            return errorReport(config.dryRun, config.mode, config.taskMode)
+        }
+
+        val targetRoot = config.targetTreeUri?.let { DocumentFile.fromTreeUri(context, it) }
+        if (targetRoot == null || !targetRoot.isDirectory) {
+            return SortReport(
+                processed = 0,
+                copied = 0,
+                moved = 0,
+                failed = 1,
+                skipped = 0,
+                taskMode = config.taskMode,
                 mode = config.mode,
                 dryRun = config.dryRun,
             )
@@ -118,14 +144,12 @@ class AndroidSortUseCase(
         val monthStateCache = mutableMapOf<String, TargetFolderState?>()
         val c = Counters()
 
-        // P6 — Progress throttling state
         var lastProgressTime = System.nanoTime()
-        val progressIntervalNanos = 100_000_000L // 100 ms
+        val progressIntervalNanos = 100_000_000L
 
         onProgress(SortProgress(processed = 0, total = files.size))
 
         for (candidate in files) {
-            // P2 — Cancellation support
             coroutineContext.ensureActive()
 
             val sourceFile = candidate.file
@@ -146,7 +170,6 @@ class AndroidSortUseCase(
                     yearDirCache, monthStateCache,
                 )
 
-                // P7 — Separated dry-run path
                 if (config.dryRun) {
                     processDryRun(fileName, monthState, config.conflictPolicy, c)
                     lastProgressTime = emitThrottled(c, files.size, onProgress, lastProgressTime, progressIntervalNanos)
@@ -154,12 +177,12 @@ class AndroidSortUseCase(
                 }
 
                 if (monthState == null) {
-                    c.failed += 1; c.createFailed += 1
+                    c.failed += 1
+                    c.createFailed += 1
                     lastProgressTime = emitThrottled(c, files.size, onProgress, lastProgressTime, progressIntervalNanos)
                     continue
                 }
 
-                // P7 — Separated real-file path
                 processRealFile(sourceFile, candidate.parent, fileName, monthState, config, c)
             } catch (_: Exception) {
                 c.failed += 1
@@ -168,12 +191,50 @@ class AndroidSortUseCase(
             lastProgressTime = emitThrottled(c, files.size, onProgress, lastProgressTime, progressIntervalNanos)
         }
 
-        // Always emit final progress
         onProgress(SortProgress(processed = c.processed, total = files.size))
-
-        // P8 — Duration measurement
         val durationMillis = (System.nanoTime() - startTime) / 1_000_000
-        return c.toReport(config.dryRun, durationMillis, config.mode)
+        return c.toReport(config.dryRun, durationMillis, config.mode, config.taskMode)
+    }
+
+    private suspend fun runRepairMode(
+        sourceRoot: DocumentFile,
+        config: SortConfig,
+        onProgress: (SortProgress) -> Unit,
+        startTime: Long,
+    ): SortReport {
+        val files = collectCandidateFiles(sourceRoot, config)
+        val c = Counters()
+        var lastProgressTime = System.nanoTime()
+        val progressIntervalNanos = 100_000_000L
+
+        onProgress(SortProgress(processed = 0, total = files.size))
+
+        for (candidate in files) {
+            coroutineContext.ensureActive()
+            c.processed += 1
+
+            try {
+                val desiredMillis = resolveRepairTimestamp(candidate.file, config.repairDateSourceMode)
+                when {
+                    desiredMillis == null -> c.skipped += 1
+                    config.dryRun -> c.planned += 1
+                    preserveAndVerifyTimestamp(desiredMillis, candidate.file.uri) -> c.timestampPreserved += 1
+                    else -> {
+                        c.failed += 1
+                        c.timestampNotPreserved += 1
+                    }
+                }
+            } catch (_: Exception) {
+                c.failed += 1
+                c.timestampNotPreserved += 1
+            }
+
+            lastProgressTime = emitThrottled(c, files.size, onProgress, lastProgressTime, progressIntervalNanos)
+        }
+
+        onProgress(SortProgress(processed = c.processed, total = files.size))
+        val durationMillis = (System.nanoTime() - startTime) / 1_000_000
+        return c.toReport(config.dryRun, durationMillis, config.mode, config.taskMode)
     }
 
     // ── Per-file processing (P7) ────────────────────────────────────────
@@ -272,6 +333,20 @@ class AndroidSortUseCase(
         }
     }
 
+    private fun resolveRepairTimestamp(file: DocumentFile, mode: RepairDateSourceMode): Long? {
+        val metadataMillis = tryReadExifDate(file.uri)?.atZone(ZoneId.systemDefault())?.toInstant()?.toEpochMilli()
+        val fileNameMillis = FileNameTimestampExtractor.extract(file.name)
+            ?.atZone(ZoneId.systemDefault())
+            ?.toInstant()
+            ?.toEpochMilli()
+
+        return when (mode) {
+            RepairDateSourceMode.METADATA_THEN_FILENAME -> metadataMillis ?: fileNameMillis
+            RepairDateSourceMode.FILENAME_THEN_METADATA -> fileNameMillis ?: metadataMillis
+            RepairDateSourceMode.FILENAME_ONLY -> fileNameMillis
+        }
+    }
+
     private fun preserveAndVerifyTimestamp(sourceMillis: Long?, targetUri: Uri): Boolean {
         val timestampToPreserve = TimestampPreservationPolicy.sourceTimestampToPreserve(sourceMillis) ?: return false
 
@@ -355,12 +430,13 @@ class AndroidSortUseCase(
 
     // ── Directory and file helpers ──────────────────────────────────────
 
-    private fun errorReport(dryRun: Boolean, mode: OperationMode) = SortReport(
+    private fun errorReport(dryRun: Boolean, mode: OperationMode, taskMode: TaskMode) = SortReport(
         processed = 0,
         copied = 0,
         moved = 0,
         failed = 1,
         skipped = 0,
+        taskMode = taskMode,
         mode = mode,
         dryRun = dryRun,
     )
