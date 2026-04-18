@@ -11,6 +11,9 @@ data class SortReport(
     val createFailed: Int = 0,
     val copyFailed: Int = 0,
     val deleteFailed: Int = 0,
+    val timestampPreserved: Int = 0,
+    val timestampNotPreserved: Int = 0,
+    val mode: OperationMode = OperationMode.COPY,
     val dryRun: Boolean = false,
     val durationMillis: Long = 0,
 )

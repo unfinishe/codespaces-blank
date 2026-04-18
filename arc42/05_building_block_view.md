@@ -36,7 +36,7 @@
 ### Data/Platform Layer
 - Storage adapter using Android storage APIs.
 - Metadata adapter for image date extraction.
-- File operation adapter for copy/move.
+- File operation adapter for copy/move and best-effort timestamp preservation.
 
 ## Level 3: Core Contracts (MVP)
 - `SortUseCase.run(config, onProgress): SortReport`

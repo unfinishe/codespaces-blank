@@ -5,7 +5,7 @@
 - Runtime: fully offline, no backend dependency.
 - Language: Kotlin.
 - UI: Material 3 and Android design guideline compliant.
-- Storage access: Android-safe APIs (SAF/DocumentFile and related platform APIs).
+- Storage access: Android-safe APIs (SAF/DocumentFile and related platform APIs). True filesystem creation time may remain provider-controlled.
 
 ## Product Constraints
 - MVP must provide `Copy` and `Move`.

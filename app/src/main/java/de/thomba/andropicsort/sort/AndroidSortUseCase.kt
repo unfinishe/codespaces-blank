@@ -1,16 +1,20 @@
 package de.thomba.andropicsort.sort
 
 import android.content.ContentResolver
+import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
+import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import androidx.exifinterface.media.ExifInterface
 import de.thomba.andropicsort.core.ConflictPolicy
 import de.thomba.andropicsort.core.ConflictResolver
 import de.thomba.andropicsort.core.DateSourceMode
 import de.thomba.andropicsort.core.InputFilePolicy
+import de.thomba.andropicsort.core.NativeTransferPolicy
 import de.thomba.andropicsort.core.OperationMode
 import de.thomba.andropicsort.core.SortReport
+import de.thomba.andropicsort.core.TimestampPreservationPolicy
 import de.thomba.andropicsort.core.YearMonthFolderSchema
 import kotlinx.coroutines.ensureActive
 import java.time.Instant
@@ -29,6 +33,7 @@ class AndroidSortUseCase(
 
     private data class SortCandidate(
         val file: DocumentFile,
+        val parent: DocumentFile,
         val dateSourceMode: DateSourceMode,
     )
 
@@ -59,8 +64,10 @@ class AndroidSortUseCase(
         var createFailed = 0
         var copyFailed = 0
         var deleteFailed = 0
+        var timestampPreserved = 0
+        var timestampNotPreserved = 0
 
-        fun toReport(dryRun: Boolean, durationMillis: Long) = SortReport(
+        fun toReport(dryRun: Boolean, durationMillis: Long, mode: OperationMode) = SortReport(
             processed = processed,
             copied = copied,
             moved = moved,
@@ -71,6 +78,9 @@ class AndroidSortUseCase(
             createFailed = createFailed,
             copyFailed = copyFailed,
             deleteFailed = deleteFailed,
+            timestampPreserved = timestampPreserved,
+            timestampNotPreserved = timestampNotPreserved,
+            mode = mode,
             dryRun = dryRun,
             durationMillis = durationMillis,
         )
@@ -85,14 +95,22 @@ class AndroidSortUseCase(
 
         // P1 — Source ≠ Target validation
         if (config.sourceTreeUri == config.targetTreeUri) {
-            return errorReport(config.dryRun)
+            return errorReport(config.dryRun, config.mode)
         }
 
         val sourceRoot = DocumentFile.fromTreeUri(context, config.sourceTreeUri)
         val targetRoot = DocumentFile.fromTreeUri(context, config.targetTreeUri)
 
         if (sourceRoot == null || !sourceRoot.isDirectory || targetRoot == null || !targetRoot.isDirectory) {
-            return SortReport(processed = 0, copied = 0, moved = 0, failed = 1, skipped = 0, dryRun = config.dryRun)
+            return SortReport(
+                processed = 0,
+                copied = 0,
+                moved = 0,
+                failed = 1,
+                skipped = 0,
+                mode = config.mode,
+                dryRun = config.dryRun,
+            )
         }
 
         val files = collectCandidateFiles(sourceRoot, config)
@@ -142,7 +160,7 @@ class AndroidSortUseCase(
                 }
 
                 // P7 — Separated real-file path
-                processRealFile(sourceFile, fileName, monthState, config, c)
+                processRealFile(sourceFile, candidate.parent, fileName, monthState, config, c)
             } catch (_: Exception) {
                 c.failed += 1
             }
@@ -155,7 +173,7 @@ class AndroidSortUseCase(
 
         // P8 — Duration measurement
         val durationMillis = (System.nanoTime() - startTime) / 1_000_000
-        return c.toReport(config.dryRun, durationMillis)
+        return c.toReport(config.dryRun, durationMillis, config.mode)
     }
 
     // ── Per-file processing (P7) ────────────────────────────────────────
@@ -179,17 +197,36 @@ class AndroidSortUseCase(
 
     private fun processRealFile(
         sourceFile: DocumentFile,
+        sourceParent: DocumentFile,
         fileName: String,
         monthState: TargetFolderState,
         config: SortConfig,
         c: Counters,
     ) {
+        val sourceTimestamp = TimestampPreservationPolicy.sourceTimestampToPreserve(sourceFile.lastModified())
         val plannedName = when (config.conflictPolicy) {
             ConflictPolicy.RENAME -> ConflictResolver.resolveUniqueName(fileName, monthState.existingNames)
             ConflictPolicy.OVERWRITE -> fileName
         }
         val plannedWasRenamed = plannedName != fileName
         if (plannedWasRenamed) c.renamed += 1
+
+        val nativeTargetUri = tryNativeTransfer(
+            sourceFile = sourceFile,
+            sourceParent = sourceParent,
+            targetState = monthState,
+            targetName = plannedName,
+            mode = config.mode,
+            conflictPolicy = config.conflictPolicy,
+        )
+        if (nativeTargetUri != null) {
+            when (config.mode) {
+                OperationMode.COPY -> c.copied += 1
+                OperationMode.MOVE -> c.moved += 1
+            }
+            recordTimestampStatus(sourceTimestamp, nativeTargetUri, c)
+            return
+        }
 
         val mime = sourceFile.type ?: "application/octet-stream"
         val targetPlanResult = createTargetFileWithPolicy(monthState, fileName, mime, config.conflictPolicy)
@@ -211,15 +248,85 @@ class AndroidSortUseCase(
         }
 
         when (config.mode) {
-            OperationMode.COPY -> c.copied += 1
+            OperationMode.COPY -> {
+                c.copied += 1
+                recordTimestampStatus(sourceTimestamp, targetPlan.targetFile.uri, c)
+            }
             OperationMode.MOVE -> {
                 if (sourceFile.delete()) {
                     c.moved += 1
+                    recordTimestampStatus(sourceTimestamp, targetPlan.targetFile.uri, c)
                 } else {
                     cleanupTarget(targetPlan.targetFile, monthState)
                     c.failed += 1; c.deleteFailed += 1
                 }
             }
+        }
+    }
+
+    private fun recordTimestampStatus(sourceTimestamp: Long?, targetUri: Uri, c: Counters) {
+        if (preserveAndVerifyTimestamp(sourceTimestamp, targetUri)) {
+            c.timestampPreserved += 1
+        } else {
+            c.timestampNotPreserved += 1
+        }
+    }
+
+    private fun preserveAndVerifyTimestamp(sourceMillis: Long?, targetUri: Uri): Boolean {
+        val timestampToPreserve = TimestampPreservationPolicy.sourceTimestampToPreserve(sourceMillis) ?: return false
+
+        if (isTimestampVerified(timestampToPreserve, targetUri)) return true
+
+        runCatching {
+            val values = ContentValues().apply {
+                put(DocumentsContract.Document.COLUMN_LAST_MODIFIED, timestampToPreserve)
+            }
+            contentResolver.update(targetUri, values, null, null)
+        }
+
+        return isTimestampVerified(timestampToPreserve, targetUri)
+    }
+
+    private fun isTimestampVerified(sourceMillis: Long, targetUri: Uri): Boolean {
+        val targetMillis = DocumentFile.fromSingleUri(context, targetUri)?.lastModified()
+        return TimestampPreservationPolicy.isPreserved(sourceMillis = sourceMillis, targetMillis = targetMillis)
+    }
+
+    private fun tryNativeTransfer(
+        sourceFile: DocumentFile,
+        sourceParent: DocumentFile,
+        targetState: TargetFolderState,
+        targetName: String,
+        mode: OperationMode,
+        conflictPolicy: ConflictPolicy,
+    ): Uri? {
+        val sourceName = sourceFile.name ?: return null
+        if (!NativeTransferPolicy.canUseFastPath(sourceName, targetName)) return null
+
+        if (conflictPolicy == ConflictPolicy.OVERWRITE && targetState.existingNames.contains(targetName)) {
+            val existing = targetState.folder.findFile(targetName)
+            if (existing != null) {
+                if (!existing.delete()) return null
+                targetState.existingNames.remove(targetName)
+            }
+        }
+
+        return try {
+            val resultUri = when (mode) {
+                OperationMode.COPY -> DocumentsContract.copyDocument(contentResolver, sourceFile.uri, targetState.folder.uri)
+                OperationMode.MOVE -> DocumentsContract.moveDocument(
+                    contentResolver,
+                    sourceFile.uri,
+                    sourceParent.uri,
+                    targetState.folder.uri,
+                )
+            } ?: return null
+
+            val actualName = DocumentFile.fromSingleUri(context, resultUri)?.name ?: targetName
+            targetState.existingNames.add(actualName)
+            resultUri
+        } catch (_: Exception) {
+            null
         }
     }
 
@@ -248,8 +355,14 @@ class AndroidSortUseCase(
 
     // ── Directory and file helpers ──────────────────────────────────────
 
-    private fun errorReport(dryRun: Boolean) = SortReport(
-        processed = 0, copied = 0, moved = 0, failed = 1, skipped = 0, dryRun = dryRun,
+    private fun errorReport(dryRun: Boolean, mode: OperationMode) = SortReport(
+        processed = 0,
+        copied = 0,
+        moved = 0,
+        failed = 1,
+        skipped = 0,
+        mode = mode,
+        dryRun = dryRun,
     )
 
     private fun ensureDirectory(parent: DocumentFile, name: String, createIfMissing: Boolean): DocumentFile? {
@@ -368,6 +481,7 @@ class AndroidSortUseCase(
                         files.add(
                             SortCandidate(
                                 file = child,
+                                parent = node,
                                 dateSourceMode = InputFilePolicy.effectiveDateSourceMode(
                                     fileName = child.name,
                                     configuredMode = config.dateSourceMode,

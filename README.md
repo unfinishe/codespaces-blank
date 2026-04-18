@@ -4,6 +4,7 @@
 Android Pic Sort organizes photos from a selected source folder into a selected target folder by date.
 It supports `Copy` or `Move`, optional `Dry run`, and creates a `YYYY/MM MonthName` folder structure.
 Optionally, it can also sort non-image files (for example videos), using file date mode automatically for those files.
+The app also attempts to preserve the source file date on the target file and reports clearly when Android storage limitations prevent confirmation. True filesystem creation time cannot be guaranteed uniformly under Android SAF.
 
 ## Status
 - Current state: first usable Android MVP scaffold implemented.
@@ -85,7 +86,7 @@ For setup and Play upload steps, see:
   - File date only (faster)
 - Organize files into `YYYY/MM MonthName` (default schema).
 - Resolve filename conflicts by policy: `Rename` (for example `name_1.ext`) or `Overwrite`.
-- Show a final report (processed, copied/moved, failed, skipped, planned, renamed, categorized error buckets).
+- Show a final report (processed, copied/moved, failed, skipped, planned, renamed, categorized error buckets, and timestamp preservation confirmation).
 
 ## Out of Scope (MVP)
 - Undo functionality.
@@ -104,7 +105,7 @@ If a format cannot expose metadata consistently on a specific device, processing
 - Material 3 UI with Android design guideline compliance.
 - Clean separation:
   - Domain rules (date extraction strategy, folder schema, conflict resolution)
-  - Android adapters (SAF/MediaStore access, EXIF reader integration)
+  - Android adapters (SAF/MediaStore access, EXIF reader integration, best-effort timestamp preservation)
   - UI + ViewModel orchestration
 - Folder schema is extensible by design; default implementation remains `YYYY/MM MonthName`.
 

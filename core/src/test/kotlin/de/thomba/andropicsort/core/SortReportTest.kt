@@ -20,6 +20,9 @@ class SortReportTest {
         assertEquals(0, report.createFailed)
         assertEquals(0, report.copyFailed)
         assertEquals(0, report.deleteFailed)
+        assertEquals(0, report.timestampPreserved)
+        assertEquals(0, report.timestampNotPreserved)
+        assertEquals(OperationMode.COPY, report.mode)
         assertFalse(report.dryRun)
         assertEquals(0L, report.durationMillis)
     }
@@ -53,6 +56,9 @@ class SortReportTest {
             createFailed = 1,
             copyFailed = 1,
             deleteFailed = 0,
+            timestampPreserved = 6,
+            timestampNotPreserved = 1,
+            mode = OperationMode.MOVE,
             dryRun = false,
             durationMillis = 1500L,
         )
@@ -65,6 +71,9 @@ class SortReportTest {
         assertEquals(1, report.createFailed)
         assertEquals(1, report.copyFailed)
         assertEquals(0, report.deleteFailed)
+        assertEquals(6, report.timestampPreserved)
+        assertEquals(1, report.timestampNotPreserved)
+        assertEquals(OperationMode.MOVE, report.mode)
         assertEquals(1500L, report.durationMillis)
     }
 

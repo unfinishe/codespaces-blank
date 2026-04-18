@@ -466,6 +466,10 @@ private fun StatusArea(state: MainUiState, compact: Boolean) {
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(stringResource(R.string.sorting_in_progress), style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        text = stringResource(R.string.current_mode_line, operationModeLabel(state.mode)),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.5.dp)
                     }
@@ -504,6 +508,24 @@ private fun StatusArea(state: MainUiState, compact: Boolean) {
                     compact = compact,
                 )
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = stringResource(R.string.report_mode_line, operationModeLabel(report.mode)),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        text = stringResource(
+                            R.string.report_timestamp_line,
+                            report.timestampPreserved,
+                            report.timestampNotPreserved,
+                        ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (report.timestampNotPreserved > 0) {
+                        Text(
+                            text = stringResource(R.string.report_timestamp_warning, report.timestampNotPreserved),
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
                     Text(
                         text = stringResource(
                             R.string.report_line,
@@ -686,6 +708,12 @@ private fun FolderSection(
             Text(buttonLabel)
         }
     }
+}
+
+@Composable
+private fun operationModeLabel(mode: OperationMode): String = when (mode) {
+    OperationMode.COPY -> stringResource(R.string.copy_mode)
+    OperationMode.MOVE -> stringResource(R.string.move_mode)
 }
 
 private fun formatDuration(millis: Long): String {
